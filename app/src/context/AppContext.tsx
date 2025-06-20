@@ -1,98 +1,95 @@
-import axios from "axios"
-import { createContext, useState, type ReactNode } from "react"
+import axios from "axios";
+import { createContext, useState, type ReactNode } from "react";
 
 type AppContextType = {
-	CSV: File | null,
-	layout: File | null,
-	setCSV: (csvFile: File) => void,
-	setLayout: (layout: File) => void,
-	send: () => Promise<void>,
-	progress: number,
-	isGenerating: boolean,
-	isReady: boolean,
-	url: any;
+    CSV: File | null,
+    layout: File | null,
+    setCSV: (csvFile: File) => void,
+    setLayout: (layout: File) => void,
+    send: () => Promise<void>,
+    progress: number,
+    isGenerating: boolean,
+    isReady: boolean,
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
 export const AppProvider = ({ children }: { children: ReactNode }) => {
-	const [CSV, setCSV] = useState<File | null>(null);
-	const [layout, setLayout] = useState<File | null>(null);
+    const [CSV, setCSV] = useState<File | null>(null);
+    const [layout, setLayout] = useState<File | null>(null);
 
-	const [progress, setProgress] = useState(0);
-	const [isGenerating, setIsGenerating] = useState(false);
-	const [isReady, setIsReady] = useState(false);
-	const [url, setUrl] = useState("");
-	const send = async () => {
+    const [progress, setProgress] = useState(0);
+    const [isGenerating, setIsGenerating] = useState(false);
+    const [isReady, setIsReady] = useState(false);
 
-		const formData = new FormData();
-		formData.append("csv", CSV);
-		formData.append("layout", layout);
+const send = async () => {
+    const formData = new FormData();
+    if (CSV) formData.append("csv", CSV);
+    if (layout) formData.append("layout", layout);
 
-		setIsGenerating(true);
-		setIsReady(false);
-		setProgress(0);
+    setIsGenerating(true);
+    setIsReady(false);
+    setProgress(0);
 
-		try {
-			const response = await axios.post("http://localhost:8000/api/v1/generate", formData, {
-				headers: { "Content-Type": "multipart/form-data" },
-				onUploadProgress: (event) => {
-					if (event.total) {
-						const percent = Math.round((event.loaded * 100) / event.total);
-						setProgress(percent);
-					}
-				}
-			});
+    try {
+        const response = await axios.post("http://localhost:8000/api/v1/generate", formData, {
+            headers: { "Content-Type": "multipart/form-data" },
+            responseType: 'blob',
+            onUploadProgress: (event) => {
+                if (event.total) {
+                    const percent = Math.round((event.loaded * 100) / event.total);
+                    setProgress(percent);
+                }
+            }
+        });
 
-			console.log("Post sent successfully!");
-			setProgress(100);
-			
-			const blobUrl = makeDownload(response);
-			
-			setUrl(blobUrl);
-			await new Promise(res => setTimeout(res, 500));
+        console.log("Post sent successfully!");
 
-			setIsGenerating(false);
-			setIsReady(true);
-		} catch (error) {
-			console.error(error);
-			setIsGenerating(false);
-		}
-	};
+        if (response.status === 200 && response.data.size > 0) {
+            makeDownload(response);
+        } else {
+            console.error("Invalid PDF file received from server.");
+        }
 
-	return (
-		<AppContext.Provider value={{
-			CSV, layout, setCSV, setLayout,
-			send, progress, isGenerating, isReady
-		}}>
-			{children}
-		</AppContext.Provider>
-	);
+        setIsGenerating(false);
+        setIsReady(true);
+    } catch (error) {
+        console.error("Error during PDF generation or download:", error);
+        setIsGenerating(false);
+    }
+};
+    return (
+        <AppContext.Provider value={{
+            CSV, layout, setCSV, setLayout,
+            send, progress, isGenerating, isReady
+        }}>
+            {children}
+        </AppContext.Provider>
+    );
 };
 
-const makeDownload = async (response: any) => {
+const makeDownload = (response: any) => {
+    const contentDisposition = response.headers['content-disposition'];
+    let filename = 'generated_pdf.pdf';
 
-	const contentDisposition = response.headers.get('Content-Disposition');
-	let filename = 'generated_pdf.pdf'; // Default filename
-	if (contentDisposition && contentDisposition.includes('filename=')) {
-	    // Extract filename from header (careful with quotes)
-	    const filenameMatch = /filename\*?=['"]?(?:UTF-8''|[^; ]+)?([^"';\n]*)/.exec(contentDisposition);
-	    if (filenameMatch && filenameMatch[1]) {
-		filename = decodeURIComponent(filenameMatch[1].replace(/['"]/g, ''));
-	    }
-	}
+    if (contentDisposition && contentDisposition.includes('filename=')) {
+        const filenameMatch = /filename\*?=['"]?(?:UTF-8''|[^; ]+)?([^"';\n]*)/.exec(contentDisposition);
+        if (filenameMatch && filenameMatch[1]) {
+            filename = decodeURIComponent(filenameMatch[1].replace(/['"]/g, ''));
+        }
+    }
 
-	// Get the response as a Blob (binary data)
-	const pdfBlob = await response.blob();
+    const pdfBlob = new Blob([response.data], { type: 'application/pdf' });
 
-	// Create a URL for the Blob
-	const blobUrl = URL.createObjectURL(pdfBlob);
+    const blobUrl = URL.createObjectURL(pdfBlob);
+    const link = document.createElement('a');
+    link.href = blobUrl;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(blobUrl);
 
-	return blobUrl;
-
-}
-
-
-
-
+    console.log(`DEBUG: Triggered download for ${filename}`);
+};
 export default AppContext;
