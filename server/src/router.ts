@@ -1,9 +1,16 @@
 import { Router } from "express";
 import generate from "./controllers/create";
-
+import multer from "multer";
+const upload = multer({dest: 'uploads/'})
 const router = Router();
 
-router.post('/generate', generate);
+const uploadFiles = upload.fields([
+	{name: 'csv', maxCount: 1 },
+	{name: 'layout'}
+])
+
+
+router.post('/generate', uploadFiles ,  generate);
 
 
 
